@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Dashboard estático para monitoramento de estufa automática com Raspberry Pi 3 e ESP-CAM."
+    />
+    <title>Estufa Automática | Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="topbar__identity">
+          <p class="eyebrow">Raspberry Pi 3 + ESP-CAM</p>
+          <h1>Estufa Automática</h1>
+        </div>
+
+        <div class="topbar__actions">
+          <span class="connection-pill" id="connectionStatus">Carregando</span>
+          <button class="secondary-button" id="themeToggle" type="button">
+            Tema
+          </button>
+          <button class="primary-button" id="refreshButton" type="button">
+            Atualizar dados
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero-status" aria-labelledby="statusTitle">
+          <div class="hero-status__copy">
+            <p class="eyebrow">Ambiente atual</p>
+            <h2 id="statusTitle">Sincronizando sensores</h2>
+            <p id="statusSummary">
+              Leitura inicial da estufa em andamento.
+            </p>
+          </div>
+
+          <div class="quick-metrics" id="quickMetrics" aria-label="Resumo dos sensores"></div>
+        </section>
+
+        <section class="dashboard-grid" aria-label="Indicadores da estufa">
+          <article class="info-card plant-card" id="plantCard"></article>
+          <article class="info-card metric-card" id="temperatureCard"></article>
+          <article class="info-card metric-card" id="humidityCard"></article>
+          <article class="info-card device-card" id="deviceCard"></article>
+        </section>
+
+        <section class="workspace-grid">
+          <article class="camera-panel" aria-labelledby="cameraTitle">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">ESP-CAM</p>
+                <h2 id="cameraTitle">Monitoramento visual</h2>
+              </div>
+              <span class="soft-label" id="photoTimestamp">Sem foto</span>
+            </div>
+
+            <figure class="photo-viewer">
+              <img id="mainPlantPhoto" src="" alt="Foto recente da planta" />
+            </figure>
+            <p class="photo-caption" id="mainPhotoCaption">Aguardando imagem.</p>
+
+            <div class="thumbnail-strip" id="photoThumbnails" aria-label="Fotos recentes"></div>
+          </article>
+
+          <aside class="side-stack">
+            <article class="info-card chart-card" aria-labelledby="chartTitle">
+              <div class="section-heading section-heading--compact">
+                <div>
+                  <p class="eyebrow">Histórico</p>
+                  <h2 id="chartTitle">Últimas leituras</h2>
+                </div>
+              </div>
+
+              <div class="segmented-control" role="tablist" aria-label="Selecionar indicador">
+                <button class="is-active" type="button" data-chart-metric="temperature" role="tab">
+                  Temperatura
+                </button>
+                <button type="button" data-chart-metric="humidity" role="tab">
+                  Umidade
+                </button>
+              </div>
+
+              <div class="chart-bars" id="chartBars" aria-label="Gráfico das últimas leituras"></div>
+              <div class="chart-scale" id="chartScale"></div>
+            </article>
+
+            <article class="info-card timeline-card" aria-labelledby="timelineTitle">
+              <div class="section-heading section-heading--compact">
+                <div>
+                  <p class="eyebrow">Automação</p>
+                  <h2 id="timelineTitle">Atividade recente</h2>
+                </div>
+              </div>
+              <ol class="timeline-list" id="timelineList"></ol>
+            </article>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <noscript>
+      <p class="noscript-message">
+        Ative o JavaScript para visualizar os dados da estufa.
+      </p>
+    </noscript>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
