@@ -1,9 +1,9 @@
 const API_CONFIG = {
-  useMockData: true,
-  baseUrl: "https://sua-raspberry.local/api",
+  useMockData: false, 
+  baseUrl: "http://127.0.0.1:5001",
   endpoints: {
-    dashboard: "/greenhouse/dashboard",
-    photos: "/greenhouse/photos/latest",
+    dashboard: "/dashboard",
+    photos: "/photos/latest",
   },
   timeoutMs: 7000,
 };
