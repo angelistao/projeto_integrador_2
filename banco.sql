@@ -1,6 +1,6 @@
 -- Criação do banco e usuário
 CREATE DATABASE estufa_db;
-CREATE USER admin_estufa WITH ENCRYPTED PASSWORD 'sua_senha_aqui';
+CREATE USER admin_estufa WITH ENCRYPTED PASSWORD 'estint123#';
 GRANT ALL PRIVILEGES ON DATABASE estufa_db TO admin_estufa;
 
 \c estufa_db
