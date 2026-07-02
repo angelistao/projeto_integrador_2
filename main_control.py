@@ -1,135 +1,82 @@
-import sqlite3
 import time
-import requests
-import RPi.GPIO as GPIO
-from datetime import datetime
+import logging
+import psycopg2
+from gpiozero import OutputDevice
 import board
 import adafruit_dht
-import os
 
-# --- CONFIGURAÇÕES DE HARDWARE ---
-PINO_RELE_BOMBA = 17  # Pino do relé da bomba
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(PINO_RELE_BOMBA, GPIO.OUT)
-GPIO.output(PINO_RELE_BOMBA, GPIO.LOW)  # Começa desligada
+# --- CONFIGURAÇÕES ---
+# Pinos e Hardware
+PINO_BOMBA = 17
+SENSOR_DHT = board.D4
+UMIDADE_MINIMA = 40.0
 
-# GPIO 4
-dht_device = adafruit_dht.DHT22(board.D4)
+# Configuração PostgreSQL
+DB_CONFIG = {
+    "host": "192.168.x.x",  # Substitua pelo IP do seu servidor
+    "database": "estufa_db",
+    "user": "seu_usuario",
+    "password": "sua_senha",
+    "port": 5432
+}
 
-# ip da esp (tirado do taura)
-ESP_IP = "192.168.4.148"
+# Configuração de Log
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- GERENCIAMENTO DE TEMPOS (Padrão de Produção) ---
-INTERVALO_SENSORS = 30         # tempo de verificação dos sensores a cada 30 segundos
-INTERVALO_FOTO = 12 * 60 * 60  # 12 horas
-
-
-def ler_sensor():
-    """Le o sensor DHT22 retornando (umidade, temperatura) ou (None, None)"""
+def enviar_para_postgres(umidade, temp):
+    """Tenta enviar dados para o servidor remoto."""
+    conn = None
     try:
-        umidade = dht_device.humidity
-        temperatura = dht_device.temperature
-        if umidade is not None and temperatura is not None:
-            return umidade, temperatura
-    except RuntimeError as error:
-        print(f"Aviso DHT22 (Flutuação de sinal): {error.args[0]}")
-    return None, None
+        conn = psycopg2.connect(**DB_CONFIG)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO leituras (umidade_solo, temperatura, timestamp) VALUES (%s, %s, NOW())",
+            (umidade, temp)
+        )
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logging.error(f"Falha ao conectar no Postgres: {e}")
+    finally:
+        if conn:
+            conn.close()
 
-
-def ler_configuracoes():
-    """Lê os limites de umidade definidos no Banco de Dados"""
-    conn = sqlite3.connect('estufa.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT umidade_minima, umidade_ideal FROM configuracoes WHERE id=1")
-    config = cursor.fetchone()
-    conn.close()
-    return config  # Retorna (minima, ideal)
-
-
-def salvar_leitura(umidade, temperatura, foto_path):
-    """Salva os dados atuais e o caminho da foto (se houver) no Banco de Dados"""
-    conn = sqlite3.connect('estufa.db')
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO leituras_sensores (umidade_solo, temperatura, caminho_foto)
-        VALUES (?, ?, ?)
-    ''', (umidade, temperatura, foto_path))
-    conn.commit()
-    conn.close()
-
-
-def loop_principal():
-    print("Iniciando monitoramento comandado pela Raspberry Pi...")
+def main():
+    # Inicialização do Hardware
+    bomba = OutputDevice(PINO_BOMBA, initial_value=False, active_high=True)
+    dht_device = adafruit_dht.DHT22(SENSOR_DHT)
     
-    # checar se o repositório das fotos existe
-    os.makedirs("fotos_proj_integrador", exist_ok=True)
-    
-    # Registra o timestamp da última foto (0 garante que tira uma foto logo ao iniciar o script)
-    last_photo_time = 0 
-    
+    logging.info("Sistema de estufa iniciado.")
+
     while True:
-        # 1. Busca os limites atuais no Banco
-        config = ler_configuracoes()
-        u_min = config[0] if config else 40.0 # Fallback caso banco falhe
+        try:
+            # Leitura do sensor
+            umidade = dht_device.humidity
+            temperatura = dht_device.temperature
+
+            if umidade is not None and temperatura is not None:
+                logging.info(f"Leitura: {umidade}% - {temperatura}°C")
+                
+                # Envio Remoto
+                enviar_para_postgres(umidade, temperatura)
+
+                # Lógica de Irrigação (Independente do banco)
+                if umidade < UMIDADE_MINIMA:
+                    logging.warning("Umidade baixa! Acionando bomba.")
+                    bomba.on()
+                    time.sleep(4)
+                    bomba.off()
+                    logging.info("Irrigação finalizada.")
+            else:
+                logging.error("Falha ao ler DHT22.")
         
-        # 2. Leitura controlada do sensor (máximo de 5 tentativas com intervalo)
-        umidade_atual, temp_atual = None, None
-        tentativas = 0
-        while (umidade_atual is None or temp_atual is None) and tentativas < 5:
-            umidade_atual, temp_atual = ler_sensor()
-            if umidade_atual is None:
-                tentativas += 1
-                time.sleep(2.0) # Delay obrigatório entre tentativas de leitura do DHT
-        
-        # Se falhar totalmente, exibe erro mas não quebra o script
-        if umidade_atual is None or temp_atual is None:
-            print(f"[{datetime.now().strftime('%H:%M')}] ❌ Falha crítica: Não foi possível ler o DHT22 neste ciclo.")
-        else:
-            print(f"[{datetime.now().strftime('%H:%M')}] Umidade: {umidade_atual}% | Alvo Mínimo: {u_min}% | Temp: {temp_atual}°C")
+        except Exception as e:
+            logging.error(f"Erro no ciclo principal: {e}")
 
-            # 3. Lógica de Atuação (Bomba)
-            if umidade_atual < u_min:
-                print("Umidade abaixo do limite! Irrigando...")
-                GPIO.output(PINO_RELE_BOMBA, GPIO.HIGH)
-                time.sleep(4) 
-                GPIO.output(PINO_RELE_BOMBA, GPIO.LOW)
-                print("✅ Irrigação concluída.")
-
-        # 4. Controle de Tempo Assíncrono para a Foto
-        current_time = time.time()
-        nome_foto = None  # Por padrão, não há foto nova neste ciclo de 1 minuto
-        
-        if current_time - last_photo_time >= INTERVALO_FOTO:
-            print("📸 Intervalo de 12h atingido. Requisitando captura à ESP32-CAM...")
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            nome_foto = f"fotos_proj_integrador/estufa_{timestamp}.jpg"
-            
-            try:
-                # Timeout estendido para 10s para dar tempo da ESP ligar o flash/estabilizar
-                res = requests.get(f"http://{ESP_IP}/capture", timeout=10)
-                if res.status_code == 200:
-                    with open(nome_foto, 'wb') as f:
-                        f.write(res.content)
-                    print(f"📸 Foto salva com sucesso: {nome_foto}")
-                    last_photo_time = current_time  # Atualiza a marca temporal do sucesso
-                else:
-                    print(f"⚠️ ESP32 retornou erro HTTP: {res.status_code}")
-                    nome_foto = None
-            except Exception as e:
-                print(f"❌ Falha ao comunicar com ESP32: {e}")
-                nome_foto = None  # Força o script a tentar novamente no próximo ciclo de loop
-
-        # 5. Registra tudo no banco para o Dashboard (mesmo se nome_foto for None)
-        if umidade_atual is not None and temp_atual is not None:
-            salvar_leitura(umidade_atual, temp_atual, nome_foto)
-
-        # Aguarda o intervalo definido para checar os sensores novamente
-        time.sleep(INTERVALO_SENSORS)
-
+        time.sleep(30) # Intervalo de 30 segundos
 
 if __name__ == "__main__":
     try:
-        loop_principal()
+        main()
     except KeyboardInterrupt:
-        print("\nFinalizando sistema...")
-        GPIO.cleanup()
+        logging.info("Sistema encerrado pelo usuário.")
